@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Leopard Alert Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f0f2f5; }
+        .container { display: flex; flex-direction: column; align-items: center; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 25px; width: 90%; max-width: 800px; }
+        .stats { display: flex; justify-content: space-between; font-size: 1.4em; font-weight: bold; }
+        .alert-red { color: #d32f2f; }
+        .alert-green { color: #388e3c; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #e0e0e0; padding: 12px; text-align: left; }
+        th { background-color: #f8f9fa; }
+        img { width: 100%; height: auto; border-radius: 8px; border: 2px solid #ddd; }
+        h1 { color: #1a1a1a; }
+    </style>
+    <meta http-equiv="refresh" content="5"> 
+</head>
+<body>
+    <div class="container">
+        <h1>🐆 Edge-to-Cloud Leopard Detection</h1>
+        
+        <div class="card stats">
+            <div>Total Detections: {{ total_detections }}</div>
+            <div>Status: 
+                {% if logs and logs[0].detected %}
+                    <span class="alert-red">⚠️ DETECTED</span>
+                {% else %}
+                    <span class="alert-green">✅ CLEAR</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Latest Camera Frame</h2>
+            {% if latest_image %}
+                <img src="data:image/jpeg;base64,{{ latest_image }}" alt="Live Feed Frame">
+            {% else %}
+                <p>Waiting for IP Camera feed... Send POST requests to /predict to start.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h2>Recent Activity (Last 10 frames)</h2>
+            <table>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Status</th>
+                    <th>Confidence</th>
+                </tr>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.timestamp }}</td>
+                    <td class="{% if log.detected %}alert-red{% else %}alert-green{% endif %}">
+                        <b>{{ "Detected" if log.detected else "Clear" }}</b>
+                    </td>
+                    <td>{{ "%.1f%%"|format(log.confidence * 100) if log.confidence else "N/A" }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+</body>
+</html>
