@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 from datetime import datetime
 import logging
 import os
+import time
 
 from app.inference import LeopardDetector
 from app.firebase import init_firebase, send_leopard_alert
@@ -19,6 +20,7 @@ app = FastAPI(title="Leopard Alert System")
 # Strictly In-Memory State Constraints
 state = {
     "alert_active": False,
+    "last_detected_time": 0.0,
     "logs": [],
     "latest_image_b64": None,
     "total_detections": 0
@@ -29,8 +31,8 @@ templates_dir = os.path.join(os.path.dirname(__file__), "templates")
 os.makedirs(templates_dir, exist_ok=True)
 templates = Jinja2Templates(directory=templates_dir)
 
-# Initialize detector (Assuming onnx model is mapped to root or relative path)
-model_path = os.getenv("MODEL_PATH", "../leopard-detection.onnx")
+# Initialize detector
+model_path = os.getenv("MODEL_PATH", "leopard-detection.onnx")
 detector = LeopardDetector(model_path=model_path)
 
 @app.on_event("startup")
@@ -44,18 +46,24 @@ async def predict(file: UploadFile = File(...)):
     # Run ONNX inference
     detected, confidence, box = detector.detect(image_bytes)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    current_time = time.time()
     
-    # Generate visualization
     if detected:
         state["latest_image_b64"] = draw_bounding_box(image_bytes, box, confidence)
+        
+        # Only send push notification if we are triggering a NEW alert
+        # (prevents spamming Firebase every single frame for 5 seconds)
+        if not state["alert_active"] or (current_time - state["last_detected_time"] >= 5.0):
+            send_leopard_alert(confidence)
+            
         state["alert_active"] = True
+        state["last_detected_time"] = current_time
         state["total_detections"] += 1
         
-        # Trigger push notification
-        send_leopard_alert(confidence)
     else:
-        # Update dashboard with the latest clear frame
         state["latest_image_b64"] = draw_bounding_box(image_bytes, None, 0.0)
+        # Note: We NO LONGER set alert_active to False here.
+        # It will naturally expire during the /alert check.
     
     # Memory Logging logic
     log_entry = {
@@ -73,11 +81,19 @@ async def predict(file: UploadFile = File(...)):
 
 @app.get("/alert", response_model=AlertResponse)
 async def check_alert():
-    """Polled by ESP32. Returns true once if an alert is queued, then resets."""
-    current_alert = state["alert_active"]
-    if current_alert:
-        state["alert_active"] = False # Reset flag after ESP32 reads it
-    return AlertResponse(alert=current_alert)
+    """Polled by ESP32. Evaluates the 5-second cooldown timer."""
+    current_time = time.time()
+    
+    if state["alert_active"]:
+        if current_time - state["last_detected_time"] < 5.0:
+            # Still within the 5-second window
+            return AlertResponse(alert=True)
+        else:
+            # Cooldown expired
+            state["alert_active"] = False
+            return AlertResponse(alert=False)
+            
+    return AlertResponse(alert=False)
 
 @app.get("/logs")
 async def get_logs():
@@ -85,9 +101,15 @@ async def get_logs():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
+    # Determine UI status based on the cooldown timer
+    is_alerting = False
+    if state["alert_active"] and (time.time() - state["last_detected_time"] < 5.0):
+        is_alerting = True
+        
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "latest_image": state["latest_image_b64"],
-        "logs": state["logs"][:10], # Keep UI light
-        "total_detections": state["total_detections"]
+        "logs": state["logs"][:10],
+        "total_detections": state["total_detections"],
+        "is_alerting": is_alerting
     })

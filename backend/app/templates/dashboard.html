@@ -24,8 +24,8 @@
         <div class="card stats">
             <div>Total Detections: {{ total_detections }}</div>
             <div>Status: 
-                {% if logs and logs[0].detected %}
-                    <span class="alert-red">⚠️ DETECTED</span>
+                {% if is_alerting %}
+                    <span class="alert-red">⚠️ DETECTED (ALERT ACTIVE)</span>
                 {% else %}
                     <span class="alert-green">✅ CLEAR</span>
                 {% endif %}
