@@ -3,8 +3,8 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-const char* ssid = "Oppo Oppo";
-const char* password = "Hi There";
+const char* ssid = "YOUR_WIFI";
+const char* password = "YOUR_PASSWORD";
 
 const char* host = "leopard-alert-backend-xxxxx-uc.a.run.app"; // Replace with your Cloud Run URL
 const char* url = "/alert";
