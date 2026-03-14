@@ -1,26 +1,196 @@
-# Detailed Setup Guide
+# 🛠 Setup Guide
 
-## 1. Google Cloud Setup
-1. Go to Google Cloud Console and create a new project.
-2. Enable **Cloud Run API** and **Artifact Registry API**.
-3. Install the Google Cloud CLI (`gcloud`) on your local machine.
-4. Authenticate:
+This guide explains how to deploy and run the **Leopard Detection Alert System** from scratch.
+
+The system consists of:
+- Cloud backend (AI inference)
+- Firebase notifications
+- Android camera app
+- ESP32 hardware alert
+
+## 1️⃣ Prerequisites
+
+You must install:
+
+### Required Software
+- Python 3.10+
+- Docker (optional but recommended)
+- Arduino IDE
+- Google Cloud CLI (gcloud)
+
+### Hardware
+- ESP32 DevKit V1
+- Active buzzer module
+- Android phone
+
+## 2️⃣ Clone Repository
 ```bash
-   gcloud auth login
-   gcloud config set project YOUR_PROJECT_ID
+git clone https://github.com/pranav-wakode/leopard-alert-system
+cd leopard-alert-system
 ```
 
-## 2. Firebase Setup
-1. Go to Firebase Console and link to your Google Cloud project.
-2. Go to **Project Settings > Service Accounts**.
-3. Generate a new private key (Downloads a `.json` file).
-4. Save this file locally (e.g., `firebase-credentials.json`). Do NOT commit this to GitHub.
-5. In Cloud Run, you will mount this JSON as a secret and map it to the `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
+### 3️⃣ Google Cloud Setup
 
-## 3. Deployment to Cloud Run
-From the `backend` directory containing the Dockerfile:
+We deploy the backend using **Google Cloud Run**.
+
+### Step 1 — Create Google Cloud Project
+
+Open:
+
+https://console.cloud.google.com/
+
+Create a new project.
+
+Example:
+```
+leopard-alert-system
+```
+
+### Step 2 — Enable Required APIs
+
+Enable these APIs:
+```
+Cloud Run API
+Cloud Build API
+Artifact Registry API
+Secret Manager API
+```
+
+### Step 3 — Install Google Cloud CLI
+
+Ubuntu example:
 ```bash
-# Build the image and deploy in one step
+sudo apt install google-cloud-cli
+```
+
+### Step 4 — Login to Google Cloud
+```bash
+gcloud auth login
+```
+
+### Step 5 — Select Project
+```bash
+gcloud config set project YOUR_PROJECT_ID
+```
+
+Example:
+```bash
+gcloud config set project leopard-alert-system
+```
+
+## 4️⃣ Firebase Setup
+
+⚠️ **Important**:
+Use the **same Google Cloud project** when creating Firebase.
+
+This avoids authentication and service account issues.
+
+### Step 1 — Create Firebase Project
+
+Open:
+
+https://console.firebase.google.com
+
+Click:
+```
+Add project
+```
+
+Choose:
+```
+Import existing Google Cloud project
+```
+
+Select:
+```
+leopard-alert-system
+```
+
+### Step 2 — Enable Cloud Messaging
+
+Go to:
+```
+Firebase Console → Cloud Messaging
+```
+
+No extra configuration required.
+
+### Step 3 — Generate Service Account Key
+
+Navigate:
+```
+Firebase → Project Settings
+→ Service Accounts
+```
+
+Click:
+```
+Generate new private key
+```
+
+Download the JSON file.
+
+Example:
+```
+firebase-credentials.json
+```
+
+## 5️⃣ Store Firebase Secret in Cloud
+
+Upload the JSON key to Google Secret Manager.
+```bash
+gcloud secrets create firebase-credentials \
+  --data-file=firebase-credentials.json
+```
+
+Grant Cloud Run permission:
+```bash
+gcloud secrets add-iam-policy-binding firebase-credentials \
+  --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+## 6️⃣ Backend Setup
+
+Navigate to backend folder:
+```bash
+cd backend
+```
+
+### Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### Add Model
+
+Place the ONNX model inside:
+```
+backend/
+```
+
+Example:
+```
+backend/leopard-detection.onnx
+```
+
+### Run Locally
+```bash
+uvicorn app.main:app --reload --port 8080
+```
+
+Open dashboard:
+```
+http://localhost:8080/dashboard
+or
+https://leopard-alert-backend-xxxxx-uc.a.run.app/dashboard
+```
+
+
+## 7️⃣ Deploy Backend to Cloud Run
+
+Deploy using:
+```bash
 gcloud run deploy leopard-alert-backend \
   --source . \
   --platform managed \
@@ -28,29 +198,156 @@ gcloud run deploy leopard-alert-backend \
   --allow-unauthenticated \
   --memory 2Gi \
   --cpu 1 \
-  --set-env-vars GOOGLE_APPLICATION_CREDENTIALS=/path/to/mounted/secret.json
+  --set-secrets GOOGLE_APPLICATION_CREDENTIALS=firebase-credentials:latest
 ```
-(Note: Refer to GCP documentation on how to securely mount secrets in Cloud Run).
 
-## 4. ESP32 Setup
-1. Open Arduino IDE.
-2. Install the **ESP32** board package via Boards Manager.
-3. Install **ArduinoJson** by Benoit Blanchon via Library Manager.
-4. Connect a Buzzer:
-- Positive pin -> GPIO 12
-- Negative pin -> GND
-5. Open `esp32/esp32_alert.ino`, fill in your WiFi credentials and the Cloud Run URL.
-6. Compile and upload to the ESP32-WROOM-32.
-
-## 5. Phone / IP Camera Setup
-1. Install **IP Webcam** from the Google Play Store on your spare Android phone.
-2. Set video resolution to **640x480** or **640x640**.
-3. Start the server. Note the IP address (e.g., `http://192.168.1.100:8080`).
-4. To continuously send frames to the cloud, use a simple script or `curl` on a loop:
-```bash
-while true; do
-  curl -s [http://192.168.1.100:8080/photo.jpg](http://192.168.1.100:8080/photo.jpg) > temp.jpg
-  curl -X POST -F "file=@temp.jpg" https://YOUR_CLOUD_RUN_URL/predict
-  sleep 1
-done
+After deployment you will receive a service URL:
 ```
+https://leopard-alert-backend-xxxxx-uc.a.run.app
+```
+
+Use this URL for:
+- Android app
+- ESP32 device
+
+## 8️⃣ Android App Setup
+
+Android app responsibilities:
+- capture camera frames
+- upload images to backend
+- receive push notifications
+
+Android app source code is available here:
+
+[https://github.com/pranav-wakode/leopard-android](https://github.com/pranav-wakode/leopard-android)
+
+### Step 1 — Add Firebase to Android
+
+Go to Firebase Console:
+```
+Project Settings → Add Android App
+```
+
+Enter package name of Android app.
+
+Download:
+```
+google-services.json
+```
+
+Place inside:
+```
+app/google-services.json
+```
+
+### Step 2 — Subscribe to Alert Topic
+
+The app subscribes to topic:
+```
+leopard_alerts
+```
+
+Example code:
+```
+FirebaseMessaging.getInstance().subscribeToTopic("leopard_alerts")
+```
+
+### Step 3 — Configure Backend URL
+
+Update API endpoint in Android app:
+```
+https://YOUR_CLOUD_RUN_URL/predict
+```
+
+## 9️⃣ ESP32 Setup
+
+ESP32 polls backend `/alert` endpoint.
+
+### Hardware Wiring
+
+Connect buzzer module:
+```
+ESP32 GPIO12 → Buzzer Signal
+ESP32 3.3V   → Buzzer VCC
+ESP32 GND    → Buzzer GND
+```
+
+### Install ESP32 Board in Arduino IDE
+
+Open:
+```
+File → Preferences
+```
+
+Add board URL:
+```
+https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+```
+
+Install:
+```
+ESP32 by Espressif Systems
+```
+
+### Install Required Library
+
+Install from Library Manager:
+```
+ArduinoJson
+```
+
+### Configure WiFi and Backend
+
+Update variables in code:
+```cpp
+const char* ssid = "YOUR_WIFI";
+const char* password = "YOUR_PASSWORD";
+
+const char* host = "YOUR_CLOUD_RUN_DOMAIN";
+const char* url = "/alert";
+```
+
+Example:
+```cpp
+const char* host = "leopard-alert-backend-xxxxx-uc.a.run.app";
+```
+
+### Upload Code
+
+Select board:
+```
+ESP32 Dev Module
+```
+
+Upload the sketch.
+
+Open Serial Monitor:
+```
+115200 baud
+```
+
+Expected output:
+```
+Status: Clear
+```
+
+## 🔟 System Test
+- Open Android app
+- Start camera capture
+- Show leopard image
+
+Expected results:
+```
+AI detection triggered
+Firebase notification sent
+ESP32 buzzer activated
+Dashboard updated
+```
+
+## 🚀 Final Result
+
+This project demonstrates a **complete AI + Cloud + IoT pipeline**:
+- Real-time wildlife detection
+- Serverless cloud inference
+- Mobile push alerts
+- Hardware alarm system

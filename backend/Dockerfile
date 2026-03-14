@@ -12,8 +12,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code and ONNX model
 COPY ./app ./app
+COPY leopard-detection.onnx ./leopard-detection.onnx
 
 # Expose port 8080 as expected by Google Cloud Run
 EXPOSE 8080

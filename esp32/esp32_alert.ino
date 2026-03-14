@@ -1,65 +1,87 @@
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <ArduinoJson.h> // Requires ArduinoJson library by Benoit Blanchon
+#include <ArduinoJson.h>
 
-// --- Configuration ---
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
-const char* serverUrl = "https://YOUR_CLOUD_RUN_URL/alert"; // Replace with actual backend URL
+const char* ssid = "Oppo Oppo";
+const char* password = "Hi There";
 
-const int BUZZER_PIN = 12; // GPIO pin connected to the buzzer
+const char* host = "leopard-alert-backend-xxxxx-uc.a.run.app"; // Replace with your Cloud Run URL
+const char* url = "/alert";
+
+const int BUZZER_PIN = 12;
+
+WiFiClientSecure client;
 
 void setup() {
   Serial.begin(115200);
+
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
   WiFi.begin(ssid, password);
   Serial.print("Connecting to WiFi");
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("
-Connected to WiFi!");
+
+  Serial.println("\nConnected to WiFi!");
+  client.setInsecure();  // Skip certificate validation
 }
 
 void loop() {
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    http.begin(serverUrl);
-    int httpResponseCode = http.GET();
 
-    if (httpResponseCode == 200) {
-      String payload = http.getString();
-      
-      // Parse JSON response: {"alert": true/false}
+  if (WiFi.status() == WL_CONNECTED) {
+
+    WiFiClientSecure client;
+    client.setInsecure();
+
+    HTTPClient https;
+
+    String fullUrl = String("https://") + host + url;
+
+    Serial.println("Requesting: " + fullUrl);
+
+    https.begin(client, fullUrl);
+
+    int httpCode = https.GET();
+
+    if (httpCode > 0) {
+
+      String payload = https.getString();
+
+      Serial.println("Response:");
+      Serial.println(payload);
+
       StaticJsonDocument<200> doc;
       DeserializationError error = deserializeJson(doc, payload);
 
       if (!error) {
+
         bool alert = doc["alert"];
+
         if (alert) {
-          Serial.println("ALERT! Leopard detected! Activating buzzer...");
+          Serial.println("ALERT! Activating buzzer...");
           digitalWrite(BUZZER_PIN, HIGH);
-          delay(5000); // Sound buzzer for 5 seconds
+          delay(5000);
           digitalWrite(BUZZER_PIN, LOW);
         } else {
           Serial.println("Status: Clear");
         }
+
       } else {
-        Serial.print("JSON parsing failed: ");
-        Serial.println(error.c_str());
+        Serial.println("JSON parse failed.");
       }
+
     } else {
-      Serial.print("HTTP Error code: ");
-      Serial.println(httpResponseCode);
+      Serial.print("HTTP error: ");
+      Serial.println(httpCode);
     }
-    http.end();
-  } else {
-    Serial.println("WiFi Disconnected. Reconnecting...");
-    WiFi.reconnect();
+
+    https.end();
   }
 
-  delay(2000); // Poll /alert endpoint every 2 seconds
+  delay(3000);
 }

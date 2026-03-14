@@ -1,22 +1,27 @@
 import os
+import json
 import firebase_admin
 from firebase_admin import credentials, messaging
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Initialize Firebase App
-# Cloud Run allows setting GOOGLE_APPLICATION_CREDENTIALS environment variable
-# pointing to the service account JSON file.
 def init_firebase():
     try:
         # Check if already initialized to prevent errors on reloads
         firebase_admin.get_app()
     except ValueError:
         try:
-            # Assumes GOOGLE_APPLICATION_CREDENTIALS is set in the environment
-            if "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
-                cred = credentials.Certificate(os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
+            secret_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+            if secret_json:
+                try:
+                    # Attempt to parse as JSON string (Cloud Run secret injection)
+                    cred_dict = json.loads(secret_json)
+                    cred = credentials.Certificate(cred_dict)
+                except json.JSONDecodeError:
+                    # Fallback to file path if it's not valid JSON (Local testing)
+                    cred = credentials.Certificate(secret_json)
+                    
                 firebase_admin.initialize_app(cred)
                 logger.info("Firebase initialized successfully.")
             else:
